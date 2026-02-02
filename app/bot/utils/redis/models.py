@@ -18,6 +18,7 @@ class UserData:
     language_code: str | None = None
     last_message_date: str | None = None
     created_at: str = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S %Z")
+    last_activity_at: str | None = None
 
     def to_dict(self) -> dict:
         """
