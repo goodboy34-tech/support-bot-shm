@@ -14,6 +14,8 @@ from app.bot.utils.topics import TopicManager
 
 from app.bot.handlers.group.windows import Window
 
+from datetime import datetime, timezone, timedelta
+
 router = Router()
 router.message.filter(
     MagicData(F.event_chat.id == F.config.bot.GROUP_ID),  # type: ignore
@@ -46,6 +48,10 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage) -> No
     # Pin the message
     await message.pin()
 
+    # Обновляем last_activity_at при создании топика
+    user_data.last_activity_at = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S %Z")
+    await redis.update_user(user_data.id, user_data)
+
 
 @router.message(F.pinned_message | F.forum_topic_edited | F.forum_topic_closed | F.forum_topic_reopened | F.forum_topic)
 async def handler(message: Message) -> None:
@@ -73,6 +79,10 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage, album
     """
     user_data = await redis.get_by_message_thread_id(message.message_thread_id)
     if not user_data: return None  # noqa
+
+    # Обновляем last_activity_at при ответе оператора
+    user_data.last_activity_at = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S %Z")
+    await redis.update_user(user_data.id, user_data)
 
     if user_data.message_silent_mode:
         # If silent mode is enabled, ignore all messages.
