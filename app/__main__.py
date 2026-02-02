@@ -15,6 +15,7 @@ from .config import load_config, Config
 from .logger import setup_logger
 from .bot.jobs import setup_persistent_jobs
 from .bot.utils.redis_pool import init_redis_pool, get_redis_client, shutdown_redis_pool, log_pool_stats
+from .bot.utils.telegram_batch import init_batch_sender
 import logging
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,10 @@ async def main() -> None:
     storage = RedisStorage(redis_client)
     
     bot = Bot(token=config.bot.TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+    # 🔥 Initialize Telegram batch sender for grouped messages
+    await init_batch_sender(bot, batch_size=10, wait_time=0.1)
+
     dp = Dispatcher(persistent_scheduler=persistent_scheduler, apscheduler=apscheduler, storage=storage, config=config, bot=bot)
 
     # Передаём нужные зависимости в хендлеры через kwargs
@@ -75,7 +80,7 @@ async def main() -> None:
     logger.debug("Регистрирую роутеры")
     include_routers(dp)
     logger.debug("Регистрирую мидлвары")
-    register_middlewares(dp, config=config, redis=storage.redis, apscheduler=apscheduler)
+    register_middlewares(dp, config=config, redis=storage, apscheduler=apscheduler)
 
     # Запускаем планировщики после регистрации задач
     apscheduler.start()
