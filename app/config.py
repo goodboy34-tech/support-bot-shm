@@ -35,6 +35,19 @@ class ApiConfig:
 
 
 @dataclass
+class RemnawaveConfig:
+    """
+    Data class representing the configuration for Remnawave API.
+
+    Attributes:
+    - API_URL (str): Remnawave API URL
+    - API_KEY (str): Remnawave API key
+    """
+    API_URL: str
+    API_KEY: str
+
+
+@dataclass
 class RedisConfig:
     """
     Data class representing the configuration for Redis.
@@ -65,10 +78,13 @@ class Config:
     Attributes:
     - bot (BotConfig): The bot configuration.
     - redis (RedisConfig): The Redis configuration.
+    - api (ApiConfig): The SHM API configuration.
+    - remnawave (RemnawaveConfig): The Remnawave API configuration.
     """
     bot: BotConfig
     redis: RedisConfig
     api: ApiConfig
+    remnawave: RemnawaveConfig
 
 
 def load_config() -> Config:
@@ -96,5 +112,9 @@ def load_config() -> Config:
         api=ApiConfig(
             API_URL=env.str("API_URL"),
             BOT_USERNAME=env.str("BOT_USERNAME"),
+        ),
+        remnawave=RemnawaveConfig(
+            API_URL=env.str("REMNAWAVE_API_URL"),
+            API_KEY=env.str("REMNAWAVE_API_KEY"),
         ),
     )
