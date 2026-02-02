@@ -9,6 +9,7 @@ class RedisStorage:
     """Class for managing user data storage using Redis."""
 
     NAME = "users"
+    TOPICS_NAME = "user_topics"  # хранилище юзер_id -> topic_id
 
     def __init__(self, redis: Redis) -> None:
         """
@@ -39,6 +40,16 @@ class RedisStorage:
         """
         async with self.redis.client() as client:
             await client.hset(name, key, value)
+
+    async def _delete(self, name: str, key: str | int) -> None:
+        """
+        Deletes data from Redis.
+
+        :param name: The name of the Redis hash.
+        :param key: The key to be deleted.
+        """
+        async with self.redis.client() as client:
+            await client.hdel(name, key)
 
     async def _update_index(self, message_thread_id: int, user_id: int) -> None:
         """
@@ -105,3 +116,42 @@ class RedisStorage:
         async with self.redis.client() as client:
             user_ids = await client.hkeys(self.NAME)
             return [int(user_id) for user_id in user_ids]
+
+    # ===== НОВЫЕ МЕТОДЫ ДЛЯ ДЕДУПЛИКАЦИИ ТОПИКОВ =====
+
+    async def get_user_topic_id(self, user_id: int) -> int | None:
+        """
+        Получает ID топика для пользователя (дедупликация).
+        Возвращает ID существующего топика, если он есть.
+
+        :param user_id: ID пользователя
+        :return: ID топика или None, если топика нет
+        """
+        topic_id = await self._get(self.TOPICS_NAME, user_id)
+        return int(topic_id) if topic_id else None
+
+    async def set_user_topic_id(self, user_id: int, topic_id: int) -> None:
+        """
+        Сохраняет связь между пользователем и его топиком.
+
+        :param user_id: ID пользователя
+        :param topic_id: ID топика
+        """
+        await self._set(self.TOPICS_NAME, user_id, str(topic_id))
+
+    async def delete_user_topic_id(self, user_id: int) -> None:
+        """
+        Удаляет связь между пользователем и топиком (при закрытии).
+
+        :param user_id: ID пользователя
+        """
+        await self._delete(self.TOPICS_NAME, user_id)
+
+    async def topic_exists_for_user(self, user_id: int) -> bool:
+        """
+        Проверяет, есть ли уже открытый топик для пользователя.
+
+        :param user_id: ID пользователя
+        :return: True, если топик существует, иначе False
+        """
+        return await self.get_user_topic_id(user_id) is not None
