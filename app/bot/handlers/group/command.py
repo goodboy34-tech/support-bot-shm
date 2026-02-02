@@ -1,4 +1,3 @@
-
 import asyncio
 from contextlib import suppress
 
@@ -158,6 +157,7 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage) -> No
     await redis.update_user(user_data.id, user_data)
     await message.delete()
 
+
 @router.message(Command(commands=["close"]))
 async def handler(message: Message, manager: Manager, redis: RedisStorage) -> None:
     """
@@ -173,9 +173,11 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage) -> No
 
     url = f"https://t.me/{message.from_user.username}" if message.from_user.username != "-" else f"tg://user?id={message.from_user.id}"
 
-
     topic_manager = TopicManager(manager.bot, redis, manager.config)
     await topic_manager.close_topic(message, user_data)
+
+    # Удаляем связь user_id -> topic_id для дедупликации
+    await redis.delete_user_topic_id(user_data.id)
 
     text = manager.text_message.get("closed_topic")
     await message.bot.send_message(chat_id=user_data.id, text=text)
@@ -186,6 +188,7 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage) -> No
 
     await message.reply(text)
     await message.delete()
+
 
 @router.message(Command(commands=["open"]))
 async def open_handler(message: Message, manager: Manager, redis: RedisStorage) -> None:
@@ -215,6 +218,7 @@ async def open_handler(message: Message, manager: Manager, redis: RedisStorage) 
     await message.reply(text)
     await message.delete()
 
+
 @router.message(Command(commands=["status"]))
 async def handler(message: Message, manager: Manager, redis: RedisStorage) -> None:
     """
@@ -232,4 +236,3 @@ async def handler(message: Message, manager: Manager, redis: RedisStorage) -> No
     await message.delete()
 
 
-    
