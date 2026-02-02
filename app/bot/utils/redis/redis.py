@@ -10,6 +10,7 @@ class RedisStorage:
 
     NAME = "users"
     TOPICS_NAME = "user_topics"  # хранилище юзер_id -> topic_id
+    NEW_TOPICS_SET = "new_topics_set"  # 🔥 SET для O(1) доступа к новым топикам вместо O(n)
 
     def __init__(self, redis: Redis) -> None:
         """
@@ -155,3 +156,62 @@ class RedisStorage:
         :return: True, если топик существует, иначе False
         """
         return await self.get_user_topic_id(user_id) is not None
+
+    # ===== 🔥 НОВЫЕ МЕТОДЫ ДЛЯ SET-BASED TRACKING НОВЫХ ТОПИКОВ (O(1) вместо O(n)) =====
+
+    async def add_to_new_topics_set(self, user_id: int, thread_id: int) -> None:
+        """
+        Добавляет топик в SET новых топиков.
+        Используется вместо сканирования всех пользователей.
+
+        🔥 Сложность: O(1) вместо O(n)
+
+        :param user_id: ID пользователя
+        :param thread_id: ID топика (thread_id)
+        """
+        async with self.redis.client() as client:
+            await client.sadd(self.NEW_TOPICS_SET, f"{user_id}:{thread_id}")
+
+    async def remove_from_new_topics_set(self, user_id: int, thread_id: int) -> None:
+        """
+        Удаляет топик из SET новых топиков (при закрытии).
+
+        :param user_id: ID пользователя
+        :param thread_id: ID топика
+        """
+        async with self.redis.client() as client:
+            await client.srem(self.NEW_TOPICS_SET, f"{user_id}:{thread_id}")
+
+    async def get_new_topics_set(self) -> set[str]:
+        """
+        Получает ВСЕ новые топики из SET.
+        
+        🔥 Сложность: O(1) + O(N) где N = кол-во новых топиков (обычно < 50)
+        Вместо: O(n) где n = кол-во ВСЕХ пользователей (может быть 10k+)
+
+        :return: Множество строк вида "user_id:thread_id"
+        """
+        async with self.redis.client() as client:
+            return await client.smembers(self.NEW_TOPICS_SET)
+
+    async def get_new_topics_count(self) -> int:
+        """
+        Быстро узнает кол-во новых топиков.
+        Полезно для логирования и мониторинга.
+
+        🔥 Сложность: O(1)
+
+        :return: Количество новых топиков
+        """
+        async with self.redis.client() as client:
+            return await client.scard(self.NEW_TOPICS_SET)
+
+    async def clear_new_topics_set(self) -> None:
+        """
+        Очищает SET новых топиков.
+        Используется после отправки сводки.
+
+        :return: Количество удаленных элементов
+        """
+        async with self.redis.client() as client:
+            await client.delete(self.NEW_TOPICS_SET)
