@@ -8,8 +8,6 @@ from app.bot.manager import Manager
 from app.bot.utils.create_forum_topic import get_or_create_forum_topic
 from app.bot.utils.redis import RedisStorage
 from app.bot.utils.redis.models import UserData
-from app.bot.utils.remnawave_client import remnawave_client, RemnawaveClient
-from app.bot.utils.api import fetch_user_data
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -27,6 +25,9 @@ async def handler(
 
     Реализует антидедупликацию: один юзер = один топик.
     При повторном /start показывает сообщение "У вас уже есть открытое обращение".
+
+    🔥 ОПТИМИЗАЦИЯ: Убрали синхронный запрос к Remnawave/SHM.
+    Они теперь дёргаются только по кнопке "Получить данные" в топике.
 
     :param message: Объект сообщения
     :param manager: Объект менеджера
@@ -72,35 +73,22 @@ async def handler(
     # Сохраняем связь пользователь <-> топик
     await redis.set_user_topic_id(user_id, user_data.message_thread_id)
 
-    # Получаем данные пользователя из SHM
-    shm_user = await fetch_user_data(user_id)
-    remnawave_info = None
+    # 🔥 Формируем приветствие БЕЗ Remnawave/SHM данных
     user_name = message.from_user.first_name or "Пользователь"
     username = message.from_user.username or "неизвестен"
 
-    # Пытаемся получить информацию о подписке из Remnawave
-    if shm_user and shm_user.get("login"):
-        remnawave_info = await remnawave_client.get_user_subscription_info(
-            shm_user["login"]
-        )
-
-    # Формируем приветственное сообщение с информацией
-    welcome_text = await _build_welcome_message(
-        user_name, username, remnawave_info, user_id
-    )
-
+    welcome_text = _build_welcome_message(user_name, username, user_id)
     await manager.send_message(welcome_text)
 
 
-async def _build_welcome_message(
-        user_name: str, username: str, remnawave_info, user_id: int
-) -> str:
+def _build_welcome_message(user_name: str, username: str, user_id: int) -> str:
     """
-    Формирует приветственное сообщение с информацией о пользователе.
+    Формирует приветственное сообщение БЕЗ Remnawave/SHM данных.
+    
+    Данные подгружаются только по кнопке в топике.
 
     :param user_name: Имя пользователя
     :param username: Username пользователя
-    :param remnawave_info: Информация о подписке из Remnawave
     :param user_id: ID пользователя
     :return: Форматированный текст приветствия
     """
@@ -110,22 +98,12 @@ async def _build_welcome_message(
     user_section += f"├─ ID: <code>{user_id}</code>\n"
     user_section += f"└─ @{username}\n\n"
 
-    # Информация о подписке
-    if remnawave_info and remnawave_info.get("has_active_service"):
-        subscription_text = RemnawaveClient.format_subscription_text(remnawave_info)
-        info_section = subscription_text + "\n\n"
-    else:
-        info_section = (
-            "📊 <b>Статус подписки:</b>\n"
-            "└─ Нет активной подписки ❌\n\n"
-        )
-
     footer = (
         "🆘 <b>Как мы можем вам помочь?</b>\n"
-        "Выберите действие из меню ниже или опишите вашу проблему."
+        "Опишите вашу проблему, и наша служба поддержки скоро ответит."
     )
 
-    return greeting + user_section + info_section + footer
+    return greeting + user_section + footer
 
 
 @router.message(Command("time"))
