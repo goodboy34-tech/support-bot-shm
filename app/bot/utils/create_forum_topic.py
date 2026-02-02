@@ -28,6 +28,11 @@ async def get_or_create_forum_topic(
             user_data.message_thread_id = message_thread_id
             #user_data.topic_status = "new"
             await redis.update_user(user_data.id, user_data)
+            
+            # 🆕 Отправляем уведомление оператору о новом обращении
+            await _notify_operator_async(
+                bot, config, user_data
+            )
 
         except Exception as e:
             await bot.send_message(config.bot.DEV_ID, str(e))
@@ -81,3 +86,37 @@ async def create_forum_topic(bot: Bot, config: Config, name: str) -> int:
     except Exception as ex:
         # Re-raise any other exceptions
         raise ex
+
+
+async def _notify_operator_async(bot: Bot, config: Config, user_data: UserData) -> None:
+    """
+    Асинхронно отправляет уведомление оператору о новом обращении.
+    Запускается в фоне, не блокирует основной поток.
+
+    :param bot: Объект bot
+    :param config: Конфигурация
+    :param user_data: Данные пользователя
+    """
+    try:
+        # Импортируем функцию уведомления
+        from app.bot.jobs.notify_operator import notify_operator_new_request
+        
+        # Получаем данные пользователя
+        user_name = user_data.full_name or "Пользователь"
+        username = user_data.username or "неизвестен"
+        
+        # Отправляем уведомление асинхронно в фоне
+        asyncio.create_task(
+            notify_operator_new_request(
+                bot=bot,
+                config=config,
+                user_id=user_data.id,
+                user_name=user_name,
+                username=username,
+                message_thread_id=user_data.message_thread_id,
+            )
+        )
+        logging.info(f"Фоновое уведомление оператору отправлено для пользователя {user_data.id}")
+        
+    except Exception as e:
+        logging.error(f"Ошибка при отправке уведомления оператору: {e}")
