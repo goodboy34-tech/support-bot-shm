@@ -14,6 +14,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 from .config import load_config, Config
 from .logger import setup_logger
 from .bot.jobs import setup_persistent_jobs
+from .bot.utils.redis_pool import init_redis_pool, get_redis_client, shutdown_redis_pool, log_pool_stats
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ async def on_shutdown(dispatcher: Dispatcher, config: Config, bot: Bot, apschedu
     persistent_scheduler.shutdown()
     await commands.delete(bot, config)
     await dispatcher.storage.close()
+    
+    # 🔥 Graceful shutdown of Redis pool
+    await shutdown_redis_pool()
+    
     await bot.delete_webhook()
     await bot.session.close()
 
@@ -45,12 +50,19 @@ async def main() -> None:
     config = load_config()
     await clear_fsm_keys(config.redis.dsn())
 
+    # 🔥 Initialize Redis Connection Pool BEFORE bot startup
+    await init_redis_pool(config.redis.dsn())
+    
+    # 🔥 Start monitoring Redis pool stats (optional, helpful for debugging)
+    asyncio.create_task(log_pool_stats())
+
     # Инициализация вне хендлеров
     job_store = RedisJobStore(host=config.redis.HOST, port=config.redis.PORT, db=config.redis.DB)
     apscheduler = AsyncIOScheduler(jobstores={"default": job_store})
     persistent_scheduler = AsyncIOScheduler()
     
-    redis_client = await aioredis.from_url(config.redis.dsn())
+    # 🔥 Use pool-based client instead of creating new connection
+    redis_client = await get_redis_client()
     storage = RedisStorage(redis_client)
     
     bot = Bot(token=config.bot.TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
